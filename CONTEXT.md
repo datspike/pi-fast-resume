@@ -80,3 +80,6 @@ Worker одновременно потоково читает до 10 JSONL — 
 
 **Synthetic fixture**:
 Искусственный минимальный JSONL-файл в `test/fixtures/`, проверяющий конкретный сценарий. Приватные session-файлы пользователя не попадают в git; реальный корпус используется только для ручного локального performance-smoke.
+
+**Локальный rollout**:
+После полной проверки и немедленного Conventional Commit пакет подключается в Pi через `/home/spike/hobby/pi-fast-resume` в `settings.json`. npm publish до стабилизации не выполняется.
