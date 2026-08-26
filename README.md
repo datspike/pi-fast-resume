@@ -1,38 +1,58 @@
 # pi-fast-resume
 
-Мгновенный `/resume` для [pi](https://pi.dev): оригинальный пикер сессий, данные которому подаёт фоновый индекс вместо чтения диска в TUI-потоке.
+Быстрый аналог штатного `/resume` для [Pi](https://pi.dev). Переиспользует оригинальный `SessionSelectorComponent`, но получает `SessionInfo[]` из SQLite-индекса, который обновляет worker thread. Пикер не читает JSONL и не парсит их в TUI-потоке.
 
-## Зачем
+## Возможности
 
-Встроенный `SessionManager.list/listAll` при каждом открытии пикера читает начало и хвост каждого session-файла. На корпусе из тысяч сессий (реальный корпус: ~3050 файлов, ~3,4 GiB) это даёт ощутимую задержку перед показом списка.
-
-Расширение повторяет штатный `/resume` бит-в-бит, но `SessionInfo[]` собирается из SQLite-индекса метаданных, который поддерживает worker thread: TUI не читает диск и не парсит JSON.
+- `/rf` и `/resume-fast` открывают полноразмерный resume picker.
+- Стандартный UI Pi: поиск, threaded/recent/relevance sort, Tab для Current Folder/All, Ctrl+P, Ctrl+N, Ctrl+R и Ctrl+D.
+- Worker потоково разбирает только новые и изменённые JSONL по `size + mtime` и хранит точные picker-метаданные: `name`, `firstMessage`, `messageCount`, `cwd`, связи веток и время активности.
+- `Alt+G` временно показывает/скрывает сессии pi-subagents. По умолчанию они скрыты; обычные fork/clone не фильтруются.
+- Первый запуск показывает picker сразу и наполняет его по checkpoint-пакетам; последующие открытия используют готовый индекс.
+- `/rf reindex` очищает только производный индекс и запускает rebuild.
+- Несколько Pi-процессов координируют scan через SQLite lease, поэтому не дублируют обход диска.
 
 ## Архитектура
 
 ```text
-/resume-fast ──► SessionSelectorComponent (оригинальный UI pi)
-                     │ loaders
-                     ▼
-              Worker Thread + SQLite (path → size,mtime,id,cwd,name,…)
-                     │ дифф по size+mtime; head/tail — только новые/изменённые файлы
-                     ▼
-              ~/.pi/agent/sessions/**/*.jsonl
+/rf ──► полноразмерный overlay + SessionSelectorComponent
+                              │
+                              ▼
+                       worker thread
+                              │
+                              ▼
+      SQLite metadata index + streaming JSONL metadata-pass
+                              │
+                              ▼
+                  ctx.sessionManager.getSessionDir()
 ```
 
-- Никакого полнотекстового индекса содержимого.
-- Rename — append `session_info` записи в конец файла, воркером.
-- Скрытие сабагентных сессий (`parentSession` в header + имя вида `name#8-hex`) — фильтр запроса, toggle хоткеем.
+Полный текст диалогов и FTS в индекс не попадают. Поиск оригинального picker использует ограниченный суррогат `name + firstMessage + cwd`.
 
-## Статус
+## Установка
 
-Проект в стадии проектирования; реализация не начата. Решения дизайн-сессии фиксируются в `CONTEXT.md` и `docs/adr/`.
-
-## Установка (после первой рабочей версии)
+Локальная v0.1.0 подключается как Pi package:
 
 ```bash
-pi install /path/to/pi-fast-resume   # локально
+pi install /home/spike/hobby/pi-fast-resume
 ```
+
+Затем перезапусти Pi или выполни `/reload`.
+
+> `src/worker.ts` запускается напрямую на Node 22 для локального package path. npm publish в эту версию не входит: Node не type-strip'ит `.ts` worker внутри `node_modules`.
+
+## Использование
+
+```text
+/rf
+/resume-fast
+/rf reindex
+```
+
+В picker:
+
+- `Alt+G` — показать/скрыть сабагентов до закрытия overlay;
+- остальные клавиши совпадают со штатным `/resume`.
 
 ## Разработка
 
@@ -41,4 +61,7 @@ npm install
 npm run typecheck
 npm run lint
 npm test
+pi -e ./src/index.ts
 ```
+
+Тесты используют только synthetic JSONL fixtures. Реальный локальный корпус подходит для ручного performance smoke, но не попадает в git.
