@@ -40,6 +40,13 @@ function toSessionInfo(session: IndexedSession): SessionInfo {
   };
 }
 
+/** Switch through Pi's public command-context API after picker confirmation. */
+export async function resumeSelectedSession(ctx: ExtensionCommandContext, sessionPath: string): Promise<void> {
+  await ctx.switchSession(sessionPath, {
+    withSession: async (newCtx) => newCtx.ui.notify(`Resumed: ${sessionPath}`, "info"),
+  });
+}
+
 class WorkerClient {
   private readonly worker: Worker;
   private requestId = 0;
@@ -125,6 +132,7 @@ class WorkerClient {
 class FastResumeView extends Container implements Focusable {
   private readonly status = new Text("", 0, 0);
   private readonly selector: SessionSelectorComponent;
+  private readonly client: WorkerClient;
   private agentsShown = false;
   private scope: "current" | "all" = "current";
   private sessions: IndexedSession[] = [];
@@ -141,7 +149,7 @@ class FastResumeView extends Container implements Focusable {
   }
 
   constructor(
-    private readonly client: WorkerClient,
+    client: WorkerClient,
     cwd: string,
     keybindings: KeybindingsManager,
     _theme: Theme,
@@ -149,6 +157,7 @@ class FastResumeView extends Container implements Focusable {
     requestRender: () => void,
   ) {
     super();
+    this.client = client;
     this.cwd = cwd;
     this.status = new Text("", 0, 0);
 
@@ -267,9 +276,7 @@ export default function fastResume(pi: ExtensionAPI): void {
     );
 
     if (!selected) return;
-    await ctx.switchSession(selected, {
-      withSession: async (newCtx) => newCtx.ui.notify(`Resumed: ${selected}`, "info"),
-    });
+    await resumeSelectedSession(ctx, selected);
   }
 
   pi.registerCommand("rf", {
