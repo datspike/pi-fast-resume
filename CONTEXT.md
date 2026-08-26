@@ -101,3 +101,6 @@ Worker одновременно потоково читает до 10 JSONL — 
 
 **Статус /rf**:
 Временная строка внутри overlay `/rf`/`/resume-fast`, сообщающая прогресс bootstrap, lease или ошибку воркера. Не использует глобальный footer Pi и не обращается к private полям штатного picker'а.
+
+**Полноразмерный overlay**:
+Режим `/rf`/`/resume-fast`: `ctx.ui.custom()` с `overlay: true`, `width: "100%"`, `maxHeight: "100%"`, `margin: 0`. Максимальная высота терминала отдана оригинальному picker'у; текущая Pi-сессия остаётся под overlay.
