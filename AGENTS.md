@@ -37,6 +37,11 @@ npm run typecheck && npm run lint && npm test
 
 Плюс smoke: загрузка в Pi 0.84.3 на Node 22 (`pi -e ./src/index.ts`), открытие picker'а, resume.
 
+## Worker runtime
+
+- В локальной v0.1.0 `src/worker.ts` запускается напрямую через `new Worker(new URL("./worker.ts", import.meta.url))`; Node 22.21.1 это поддерживает для локального пути.
+- Не переводить пакет на npm publish без отдельной реализации compiled JavaScript worker: Node не type-strip'ит `.ts` внутри `node_modules`.
+
 ## Известные якоря окружения
 
 - Корпус пользователя для оценки производительности: ~3050 сессий / ~3,4 GiB; среди них ~1034 сабагентных (`parentSession` в header).
