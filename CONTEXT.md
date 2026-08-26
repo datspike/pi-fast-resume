@@ -83,3 +83,6 @@ Worker одновременно потоково читает до 10 JSONL — 
 
 **Локальный rollout**:
 После полной проверки и немедленного Conventional Commit пакет подключается в Pi через `/home/spike/hobby/pi-fast-resume` в `settings.json`. npm publish до стабилизации не выполняется.
+
+**Строка сессии**:
+Отображение в оригинальном пикере: `name ?? firstMessage`. Enter сразу возобновляет сессию; отдельного preview-экрана в проекте нет.
