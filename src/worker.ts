@@ -280,6 +280,18 @@ async function renameSession(path: string, name: string): Promise<void> {
   emit({ type: "index-updated" });
 }
 
+async function removeDeletedSession(path: string): Promise<void> {
+  try {
+    await stat(path);
+    return;
+  } catch (error) {
+    if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) throw error;
+  }
+  const database = await getDb();
+  database.prepare("DELETE FROM sessions WHERE path = ?").run(path);
+  emit({ type: "index-updated" });
+}
+
 parentPort.on("message", async (request: WorkerRequest) => {
   try {
     if (request.type === "snapshot") {
@@ -295,6 +307,11 @@ parentPort.on("message", async (request: WorkerRequest) => {
     if (request.type === "rename") {
       await renameSession(request.path, request.name);
       emit({ id: request.id, type: "rename" });
+      return;
+    }
+    if (request.type === "remove") {
+      await removeDeletedSession(request.path);
+      emit({ id: request.id, type: "remove" });
       return;
     }
     if (request.type === "shutdown") {

@@ -93,6 +93,11 @@ class WorkerClient {
     if (response.type !== "rename") throw new Error("Unexpected worker response");
   }
 
+  async remove(path: string): Promise<void> {
+    const response = await this.request({ type: "remove", path });
+    if (response.type !== "remove") throw new Error("Unexpected worker response");
+  }
+
   async shutdown(): Promise<void> {
     try {
       await this.request({ type: "shutdown" });
@@ -182,6 +187,14 @@ class FastResumeView extends Container implements Focusable {
         },
       },
     );
+    const sessionList = this.selector.getSessionList();
+    const nativeDelete = sessionList.onDeleteSession;
+    if (nativeDelete) {
+      sessionList.onDeleteSession = async (path) => {
+        await nativeDelete(path);
+        await this.client.remove(path);
+      };
+    }
     this.addChild(this.status);
     this.addChild(this.selector);
     this.setStatusText("");

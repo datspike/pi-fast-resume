@@ -81,7 +81,7 @@ test("only one worker acquires the cross-process scan lease", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "pi-fast-resume-lease-"));
   const sessions = join(root, "sessions");
   const index = join(root, "index");
-  await writeSession(join(sessions, "--repo--", "one.jsonl"));
+  await Promise.all(Array.from({ length: 100 }, (_, index) => writeSession(join(sessions, "--repo--", `${index}.jsonl`))));
 
   const createWorker = () =>
     new Worker(new URL("../src/worker.ts", import.meta.url), {

@@ -25,12 +25,14 @@ export type WorkerRequest =
   | { id: number; type: "snapshot"; cwd: string }
   | { id: number; type: "sync"; sessionDir: string; reindex?: boolean }
   | { id: number; type: "rename"; path: string; name: string }
-  | { id: number; type: "shutdown" };
+  | { id: number; type: "shutdown" }
+  | { id: number; type: "remove"; path: string };
 
 export type WorkerResponse =
   | { id: number; type: "snapshot"; sessions: IndexedSession[] }
   | { id: number; type: "sync"; started: boolean; reason?: "lease-held" | "already-running" }
   | { id: number; type: "rename" }
+  | { id: number; type: "remove" }
   | { id: number; type: "shutdown" }
   | { type: "progress"; progress: WorkerProgress }
   | { type: "index-updated" }
@@ -40,4 +42,5 @@ export type WorkerRequestPayload =
   | { type: "snapshot"; cwd: string }
   | { type: "sync"; sessionDir: string; reindex?: boolean }
   | { type: "rename"; path: string; name: string }
-  | { type: "shutdown" };
+  | { type: "shutdown" }
+  | { type: "remove"; path: string };
