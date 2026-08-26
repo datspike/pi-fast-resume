@@ -98,3 +98,6 @@ Worker одновременно потоково читает до 10 JSONL — 
 
 **Готовая версия**:
 Версия, прошедшая performance и correctness gates ADR-0027: hot picker ≤200 мс p95, cold frame ≤250 мс, main thread без session I/O/SQLite, корректные indexed rows и fixture parity. Только такую версию можно сразу коммитить как проверенную.
+
+**Статус /rf**:
+Временная строка внутри overlay `/rf`/`/resume-fast`, сообщающая прогресс bootstrap, lease или ошибку воркера. Не использует глобальный footer Pi и не обращается к private полям штатного picker'а.
