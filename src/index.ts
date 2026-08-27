@@ -157,6 +157,7 @@ class FastResumeView extends Container implements Focusable {
   constructor(
     client: WorkerClient,
     cwd: string,
+    currentSessionFilePath: string | undefined,
     keybindings: KeybindingsManager,
     _theme: Theme,
     done: (path: string | undefined) => void,
@@ -187,8 +188,10 @@ class FastResumeView extends Container implements Focusable {
           await this.refresh(this.scope);
         },
       },
+      currentSessionFilePath,
     );
     const sessionList = this.selector.getSessionList();
+    (sessionList as unknown as { maxVisible: number }).maxVisible = 20;
     const nativeDelete = sessionList.onDeleteSession;
     if (nativeDelete) {
       sessionList.onDeleteSession = async (path) => {
@@ -260,6 +263,7 @@ export default function fastResume(pi: ExtensionAPI): void {
       return;
     }
     const cwd = ctx.sessionManager.getCwd();
+    const currentSessionFilePath = ctx.sessionManager.getSessionFile();
     let view: FastResumeView | undefined;
     let requestRender: (() => void) | undefined;
 
@@ -275,7 +279,7 @@ export default function fastResume(pi: ExtensionAPI): void {
     const selected = await ctx.ui.custom<string | undefined>(
       (tui: TUI, theme: Theme, keybindings: KeybindingsManager, done) => {
         requestRender = () => tui.requestRender();
-        view = new FastResumeView(worker, cwd, keybindings, theme, done, requestRender);
+        view = new FastResumeView(worker, cwd, currentSessionFilePath, keybindings, theme, done, requestRender);
         view.setStatusText(sync.started ? "Index warming up…" : sync.reason === "lease-held" ? "Index scan owned by another Pi process" : "");
         return view as Component & Focusable;
       },
