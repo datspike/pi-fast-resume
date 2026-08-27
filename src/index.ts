@@ -6,6 +6,7 @@ import {
   type ExtensionCommandContext,
   type ExtensionContext,
   type SessionInfo,
+  SessionManager,
   SessionSelectorComponent,
   type Theme,
 } from "@earendil-works/pi-coding-agent";
@@ -143,6 +144,7 @@ class FastResumeView extends Container implements Focusable {
   private scope: "current" | "all" = "current";
   private sessions: IndexedSession[] = [];
   private readonly cwd: string;
+  private readonly excludedSessionPath: string | undefined;
   private _focused = false;
 
   get focused(): boolean {
@@ -158,6 +160,7 @@ class FastResumeView extends Container implements Focusable {
     client: WorkerClient,
     cwd: string,
     currentSessionFilePath: string | undefined,
+    excludedSessionPath: string | undefined,
     keybindings: KeybindingsManager,
     _theme: Theme,
     done: (path: string | undefined) => void,
@@ -166,6 +169,7 @@ class FastResumeView extends Container implements Focusable {
     super();
     this.client = client;
     this.cwd = cwd;
+    this.excludedSessionPath = excludedSessionPath;
     this.status = new Text("", 0, 0);
 
     const loader = (scope: "current" | "all") => async () => {
@@ -231,6 +235,7 @@ class FastResumeView extends Container implements Focusable {
   private filtered(scope: "current" | "all"): SessionInfo[] {
     return this.sessions
       .filter((session) => scope === "all" || session.cwd === this.cwd)
+      .filter((session) => session.path !== this.excludedSessionPath)
       .filter((session) => this.agentsShown || !isSubagentSession(session))
       .map(toSessionInfo);
   }
@@ -250,7 +255,26 @@ export default function fastResume(pi: ExtensionAPI): void {
     return client;
   }
 
-  async function openPicker(ctx: ExtensionCommandContext): Promise<void> {
+  async function forkSelectedSession(ctx: ExtensionCommandContext, sourcePath: string): Promise<void> {
+    try {
+      const forked = SessionManager.forkFrom(sourcePath, ctx.cwd, ctx.sessionManager.getSessionDir());
+      const forkedPath = forked.getSessionFile();
+      if (!forkedPath) throw new Error("Forked session is not persisted");
+      const result = await ctx.switchSession(forkedPath, {
+        withSession: async (nextCtx) => nextCtx.ui.notify("Forked selected session", "info"),
+      });
+      if (result.cancelled) ctx.ui.notify("Fork created, but switching to it was cancelled", "warning");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      ctx.ui.notify(`Failed to fork selected session: ${message}`, "error");
+    }
+  }
+
+  async function openPicker(
+    ctx: ExtensionCommandContext,
+    onSelected: (sessionPath: string) => Promise<void> = (sessionPath) => resumeSelectedSession(ctx, sessionPath),
+    excludedSessionPath?: string,
+  ): Promise<void> {
     if (!isInteractive(ctx)) {
       ctx.ui.notify("/rf requires interactive TUI mode", "warning");
       return;
@@ -279,7 +303,7 @@ export default function fastResume(pi: ExtensionAPI): void {
     const selected = await ctx.ui.custom<string | undefined>(
       (tui: TUI, theme: Theme, keybindings: KeybindingsManager, done) => {
         requestRender = () => tui.requestRender();
-        view = new FastResumeView(worker, cwd, currentSessionFilePath, keybindings, theme, done, requestRender);
+        view = new FastResumeView(worker, cwd, currentSessionFilePath, excludedSessionPath, keybindings, theme, done, requestRender);
         view.setStatusText(sync.started ? "Index warming up…" : sync.reason === "lease-held" ? "Index scan owned by another Pi process" : "");
         return view as Component & Focusable;
       },
@@ -294,7 +318,7 @@ export default function fastResume(pi: ExtensionAPI): void {
     );
 
     if (!selected) return;
-    await resumeSelectedSession(ctx, selected);
+    await onSelected(selected);
   }
 
   pi.registerCommand("rf", {
@@ -328,6 +352,24 @@ export default function fastResume(pi: ExtensionAPI): void {
       }
       await openPicker(ctx);
     },
+  });
+
+  const forkHandler = async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
+    if (args.trim()) {
+      ctx.ui.notify("Usage: /fork-resume or /fr", "warning");
+      return;
+    }
+    await ctx.waitForIdle();
+    await openPicker(ctx, (sourcePath) => forkSelectedSession(ctx, sourcePath), ctx.sessionManager.getSessionFile());
+  };
+
+  pi.registerCommand("fork-resume", {
+    description: "Fork a session selected through the fast resume picker",
+    handler: forkHandler,
+  });
+  pi.registerCommand("fr", {
+    description: "Alias for /fork-resume",
+    handler: forkHandler,
   });
 
   pi.on("session_shutdown", async () => {
