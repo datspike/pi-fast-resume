@@ -1,48 +1,38 @@
 # pi-fast-resume — правила для агентов
 
-## Одной строкой
+## Что это за репозиторий
 
-Pi-расширение: мгновенный resume через оригинальный `SessionSelectorComponent`, данные — из worker-thread индекса метаданных. npm/local пакет `pi-fast-resume`.
+Локальное Pi-расширение с быстрым picker’ом сессий: публичный `SessionSelectorComponent` получает метаданные из SQLite-индекса в worker thread. Команды: `/rf`, `/resume-fast`, `/fork-resume`, `/fr` и `/rf reindex`.
 
-## Порядок чтения документов
+Перед работой прочитай этот файл и `README.md`; для терминов и архитектурных решений — `CONTEXT.md` и нужный ADR из `docs/adr/`.
 
-1. Этот файл.
-2. `README.md` — назначение и архитектура.
-3. `CONTEXT.md` — словарь проекта, канонические термины.
-4. `docs/adr/` — записанные решения (почему так, а не иначе).
+## Границы реализации
 
-## Источник истины по API
+- Не переписывай UI picker’а: используй публичный `SessionSelectorComponent`, подменяя только загрузчики данных.
+- Main/TUI thread не сканирует и не разбирает session JSONL и не импортирует `better-sqlite3`; эта работа принадлежит `src/worker.ts`.
+- Не добавляй FTS и полный текст сообщений в индекс. Допустимы только документированные метаданные, включая `firstMessage`.
+- Сохраняй штатные semantics Pi для resume, rename, delete и fork. `/fork-resume` и `/fr` не должны предлагать текущую сессию как источник.
+- Путь session root получай из `ctx.sessionManager`, не хардкодь `~/.pi/agent/sessions`.
 
-- Установленный `@earendil-works/pi-coding-agent`: публичные экспорты (`SessionSelectorComponent`, `SessionManager`, `SessionInfo`).
-- Не читать published-dist без нужды; сверять контракты с `dist/*.d.ts`.
+## API и совместимость
 
-## Границы проекта
+- Сверяй контракты с установленными declaration files `@earendil-works/pi-coding-agent` и `@earendil-works/pi-tui`; не полагайся на private поля без version-aware причины и smoke.
+- Текущая поддержанная среда: Pi `0.84.3`, Node `22.21.1`, local package path.
+- `src/worker.ts` запускается напрямую только для local rollout. Не заявляй npm-публикацию готовой и не меняй `package.json` на publish-ready без compiled JavaScript worker и чистого install smoke.
 
-- Мы НЕ переписываем UI пикера. Используем экспортированный компонент как есть; подменяем только загрузчики данных.
-- НЕ индексируем содержимое сообщений (кроме `firstMessage`). Никаких FTS.
-- В main thread не допускается чтение session-файлов при открытии пикера: только запрос к воркеру.
+## Проверки и коммиты
 
-## Коммиты
-
-- Conventional Commits, строго: `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:` и т.д.
-- **Правило проверенных версий**: как только получена новая проверенная версия расширения (typecheck+lint+тесты зелёные, smoke в Pi пройден) — сразу коммит этой версии. Накопление непроверенного или проверенного, но незакоммиченного — нарушение.
-
-## Проверки
-
-Минимальный цикл перед «проверено»:
+Перед статусом «проверено» выполни:
 
 ```bash
 npm run typecheck && npm run lint && npm test
+pi -e ./src/index.ts
 ```
 
-Плюс smoke: загрузка в Pi 0.84.3 на Node 22 (`pi -e ./src/index.ts`), открытие picker'а, resume.
+Для изменений UI/команд выполни интерактивный Pi smoke. Как только версия прошла необходимые проверки — сразу сделай Conventional Commit (`feat:`, `fix:`, `docs:`, `test:` и т. п.).
 
-## Worker runtime
+## Данные и документация
 
-- В локальной v0.1.0 `src/worker.ts` запускается напрямую через `new Worker(new URL("./worker.ts", import.meta.url))`; Node 22.21.1 это поддерживает для локального пути.
-- Не переводить пакет на npm publish без отдельной реализации compiled JavaScript worker: Node не type-strip'ит `.ts` внутри `node_modules`.
-
-## Известные якоря окружения
-
-- Корпус пользователя для оценки производительности: ~3050 сессий / ~3,4 GiB; среди них ~1034 сабагентных (`parentSession` в header).
-- Референсы конвенций: `~/hobby/pi-subagents` (biome), `~/hobby/pi-command-history` (node --test), антипример деградации TUI: `@kaiserlich-dev/pi-session-search`.
+- Не используй реальный корпус сессий в тестах, git или публичных примерах.
+- Не раскрывай значения из `index.db`, имена сессий, `firstMessage` или пути пользователя в README, тестовых fixtures и отчётах.
+- При изменении публичных команд, хранения индекса, поддержки платформ или privacy-границ синхронно обнови `README.md`.
