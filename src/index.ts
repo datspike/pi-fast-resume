@@ -1,3 +1,4 @@
+import { dirname } from "node:path";
 import { Worker } from "node:worker_threads";
 import {
   type KeybindingsManager as AgentKeybindingsManager,
@@ -253,7 +254,7 @@ export default function fastResume(pi: ExtensionAPI): void {
     }
 
     const worker = getClient();
-    const sessionDir = ctx.sessionManager.getSessionDir();
+    const sessionDir = dirname(ctx.sessionManager.getSessionDir());
     if (!sessionDir) {
       ctx.ui.notify("Pi has no configured session directory", "warning");
       return;
@@ -297,7 +298,7 @@ export default function fastResume(pi: ExtensionAPI): void {
     handler: async (args, ctx) => {
       if (args.trim() === "reindex") {
         const worker = getClient();
-        const sessionDir = ctx.sessionManager.getSessionDir();
+        const sessionDir = dirname(ctx.sessionManager.getSessionDir());
         if (!sessionDir) {
           ctx.ui.notify("Pi has no configured session directory", "warning");
           return;
