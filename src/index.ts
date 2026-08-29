@@ -23,6 +23,7 @@ import type { IndexedSession, WorkerProgress, WorkerRequest, WorkerRequestPayloa
 import { isSubagentSession } from "./session-parser.ts";
 
 const SEARCH_TEXT_LIMIT = 4_096;
+const WORKER_RPC_TIMEOUT_MS = 30_000;
 
 function toSessionInfo(session: IndexedSession): SessionInfo {
   const allMessagesText = `${session.name ?? ""} ${session.firstMessage} ${session.cwd}`
@@ -52,17 +53,19 @@ export async function resumeSelectedSession(ctx: ExtensionCommandContext, sessio
 class WorkerClient {
   private readonly worker: Worker;
   private requestId = 0;
-  private readonly pending = new Map<number, { resolve: (value: WorkerResponse) => void; reject: (error: Error) => void }>();
+  private readonly pending = new Map<number, { resolve: (value: WorkerResponse) => void; reject: (error: Error) => void; timeout: ReturnType<typeof setTimeout> }>();
+  private terminalError?: Error;
   private progressListener?: (progress: WorkerProgress) => void;
   private updateListener?: () => void;
   private errorListener?: (message: string) => void;
 
   constructor() {
-    this.worker = new Worker(new URL("./worker.ts", import.meta.url));
+    const workerFile = import.meta.url.endsWith(".ts") ? "./worker.ts" : "./worker.js";
+    this.worker = new Worker(new URL(workerFile, import.meta.url));
     this.worker.on("message", (message: WorkerResponse) => this.onMessage(message));
-    this.worker.on("error", (error: Error) => this.errorListener?.(error.message));
+    this.worker.on("error", (error: Error) => this.failAll(error));
     this.worker.on("exit", (code) => {
-      if (code !== 0) this.errorListener?.(`Worker stopped with code ${code}`);
+      if (code !== 0) this.failAll(new Error(`Worker stopped with code ${code}`));
     });
   }
 
@@ -109,10 +112,21 @@ class WorkerClient {
   }
 
   private request(request: WorkerRequestPayload): Promise<WorkerResponse> {
+    if (this.terminalError) return Promise.reject(this.terminalError);
     const id = ++this.requestId;
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
-      this.worker.postMessage({ ...request, id } satisfies WorkerRequest);
+      const timeout = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error(`Worker request timed out after ${WORKER_RPC_TIMEOUT_MS}ms: ${request.type}`));
+      }, WORKER_RPC_TIMEOUT_MS);
+      this.pending.set(id, { resolve, reject, timeout });
+      try {
+        this.worker.postMessage({ ...request, id } satisfies WorkerRequest);
+      } catch (error) {
+        clearTimeout(timeout);
+        this.pending.delete(id);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
     });
   }
 
@@ -126,13 +140,31 @@ class WorkerClient {
       return;
     }
     if (message.type === "error") {
+      const error = new Error(message.message);
+      if (message.id !== undefined) this.rejectPending(message.id, error);
       this.errorListener?.(message.message);
       return;
     }
     const pending = this.pending.get(message.id);
     if (!pending) return;
+    clearTimeout(pending.timeout);
     this.pending.delete(message.id);
     pending.resolve(message);
+  }
+
+  private rejectPending(id: number, error: Error): void {
+    const pending = this.pending.get(id);
+    if (!pending) return;
+    clearTimeout(pending.timeout);
+    this.pending.delete(id);
+    pending.reject(error);
+  }
+
+  private failAll(error: Error): void {
+    if (this.terminalError) return;
+    this.terminalError = error;
+    for (const id of this.pending.keys()) this.rejectPending(id, error);
+    this.errorListener?.(error.message);
   }
 }
 

@@ -3,6 +3,8 @@
   "version": "0.1.0-local",
   "description": "Instant /resume for pi: original session picker backed by a background worker-thread metadata index",
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "keywords": [
     "pi-package",
     "pi-coding-agent",
@@ -12,18 +14,22 @@
   ],
   "license": "MIT",
   "files": [
-    "src",
+    "dist",
     "package.json",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "npm run build",
     "test": "node --test test/*.test.mjs",
     "typecheck": "tsc --noEmit",
-    "lint": "biome check src test"
+    "lint": "biome check src test",
+    "pack:check": "npm pack --dry-run"
   },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "*",
-    "@earendil-works/pi-tui": "*"
+    "@earendil-works/pi-coding-agent": ">=0.84.3 <0.85.0",
+    "@earendil-works/pi-tui": ">=0.84.3 <0.85.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.8",
@@ -34,7 +40,7 @@
   },
   "pi": {
     "extensions": [
-      "./src/index.ts"
+      "./dist/index.js"
     ]
   },
   "dependencies": {

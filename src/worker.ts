@@ -321,6 +321,6 @@ parentPort.on("message", async (request: WorkerRequest) => {
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    emit({ type: "error", message });
+    emit({ id: request.id, type: "error", message });
   }
 });

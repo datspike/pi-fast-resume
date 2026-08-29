@@ -36,7 +36,7 @@ export type WorkerResponse =
   | { id: number; type: "shutdown" }
   | { type: "progress"; progress: WorkerProgress }
   | { type: "index-updated" }
-  | { type: "error"; message: string };
+  | { id?: number; type: "error"; message: string };
 
 export type WorkerRequestPayload =
   | { type: "snapshot"; cwd: string }
