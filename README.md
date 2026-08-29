@@ -2,7 +2,7 @@
 
 Локальное расширение для [Pi](https://pi.dev), которое ускоряет выбор сессии. Оно переиспользует публичный `SessionSelectorComponent`, но берёт список из SQLite-индекса метаданных, обновляемого worker thread. При открытии picker основной/TUI поток не сканирует и не разбирает session JSONL.
 
-> **Статус:** рабочий локальный rollout для Pi `0.84.3` на Node `22.21.1`. Это **не npm-релиз**: текущий worker запускается из TypeScript-исходника и не подходит для обычной установки из `node_modules` без сборки JavaScript worker.
+> **Статус:** собранный ESM package для Pi `0.84.3` на Node `22.21.1`. npm-публикация пока не выполнялась; перед ней нужен чистый install smoke на заявленных ОС и архитектурах.
 
 ## Команды
 
@@ -26,7 +26,7 @@
 
 Picker показывает до 20 строк списка одновременно.
 
-## Установка для локальной разработки
+## Установка
 
 ```bash
 pi install /home/spike/hobby/pi-fast-resume
@@ -88,6 +88,8 @@ pi -e ./src/index.ts
 
 Тесты используют только synthetic JSONL fixtures. Для ручного performance smoke допустим локальный корпус сессий; его нельзя включать в git или публикуемые примеры.
 
-## Путь к публикации
+## Сборка и выпуск
 
-Перед npm-публикацией необходимы как минимум compiled JavaScript entrypoint и worker, проверка установки из чистого `node_modules`, совместимая матрица Pi/Node/OS для `better-sqlite3` и отдельный compatibility smoke. До этого используйте только local package path.
+`npm run build` собирает отдельные `dist/index.js` и `dist/worker.js`. Локальный запуск исходника сохраняется для разработки, а package manifest использует compiled entrypoint.
+
+Перед npm-публикацией нужен `npm pack` и чистый install smoke на поддерживаемых ОС/архитектурах. `better-sqlite3` — нативная зависимость: если для Node/ОС нет prebuilt binary и не доступна сборочная цепочка, установка должна сообщить ошибку npm. Это ограничение Node ABI невозможно честно скрыть.
