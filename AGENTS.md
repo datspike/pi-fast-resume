@@ -17,7 +17,7 @@
 ## API и совместимость
 
 - Сверяй контракты с установленными declaration files `@earendil-works/pi-coding-agent` и `@earendil-works/pi-tui`; не полагайся на private поля без version-aware причины и smoke.
-- Текущая поддержанная среда: Pi `0.84.3`, Node `22.21.1`, local package path.
+- Проверенный baseline: Pi `0.84.3` и Node `22.21.1`; не вводи искусственный верхний version cap без подтверждённой несовместимости.
 - `src/worker.ts` запускается напрямую только для local rollout. Не заявляй npm-публикацию готовой и не меняй `package.json` на publish-ready без compiled JavaScript worker и чистого install smoke.
 
 ## Проверки и коммиты
