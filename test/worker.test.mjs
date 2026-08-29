@@ -102,3 +102,20 @@ test("only one worker acquires the cross-process scan lease", async (t) => {
   assert.deepEqual(secondSync, { id: secondSync.id, type: "sync", started: false, reason: "lease-held" });
   await firstReady;
 });
+
+test("worker correlates initialization errors with request ids", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "pi-fast-resume-error-"));
+  const blockedPath = join(root, "not-a-directory");
+  await writeFile(blockedPath, "blocked", "utf8");
+  const worker = new Worker(new URL("../src/worker.ts", import.meta.url), {
+    execArgv: [],
+    env: { ...process.env, PI_FAST_RESUME_INDEX_DIR: blockedPath },
+  });
+  t.after(async () => {
+    await worker.terminate();
+    await rm(root, { recursive: true, force: true });
+  });
+  const response = await request(worker, { type: "snapshot", cwd: "/repo" });
+  assert.equal(response.type, "error");
+  assert.ok(Number.isInteger(response.id));
+});
