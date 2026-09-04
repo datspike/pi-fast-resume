@@ -24,6 +24,7 @@ import { isSubagentSession } from "./session-parser.ts";
 
 const SEARCH_TEXT_LIMIT = 4_096;
 const WORKER_RPC_TIMEOUT_MS = 30_000;
+const LEASE_RETRY_INTERVAL_MS = 500;
 
 function toSessionInfo(session: IndexedSession): SessionInfo {
   const allMessagesText = `${session.name ?? ""} ${session.firstMessage} ${session.cwd}`
@@ -69,15 +70,15 @@ class WorkerClient {
     });
   }
 
-  onProgress(listener: (progress: WorkerProgress) => void): void {
+  onProgress(listener?: (progress: WorkerProgress) => void): void {
     this.progressListener = listener;
   }
 
-  onIndexUpdated(listener: () => void): void {
+  onIndexUpdated(listener?: () => void): void {
     this.updateListener = listener;
   }
 
-  onError(listener: (message: string) => void): void {
+  onError(listener?: (message: string) => void): void {
     this.errorListener = listener;
   }
 
@@ -177,6 +178,7 @@ class FastResumeView extends Container implements Focusable {
   private sessions: IndexedSession[] = [];
   private readonly cwd: string;
   private readonly excludedSessionPath: string | undefined;
+  private readonly requestRender: () => void;
   private _focused = false;
 
   get focused(): boolean {
@@ -202,6 +204,7 @@ class FastResumeView extends Container implements Focusable {
     this.client = client;
     this.cwd = cwd;
     this.excludedSessionPath = excludedSessionPath;
+    this.requestRender = requestRender;
     this.status = new Text("", 0, 0);
 
     const loader = (scope: "current" | "all") => async () => {
@@ -253,15 +256,20 @@ class FastResumeView extends Container implements Focusable {
   setStatusText(message: string): void {
     this.status.setText(message);
     this.invalidate();
+    this.requestRender();
   }
 
   async refresh(scope = this.scope): Promise<void> {
     this.sessions = await this.client.snapshot(this.cwd);
     this.selector.getSessionList().setSessions(this.filtered(scope), scope === "all");
+    this.requestRender();
   }
 
   updateFromIndex(): void {
-    void this.refresh();
+    void this.refresh().catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      this.setStatusText(`Index error: ${message}`);
+    });
   }
 
   private filtered(scope: "current" | "all"): SessionInfo[] {
@@ -272,6 +280,27 @@ class FastResumeView extends Container implements Focusable {
       .map(toSessionInfo);
   }
 
+}
+
+function sessionRoot(ctx: ExtensionContext): string | undefined {
+  const projectSessionDir = ctx.sessionManager.getSessionDir();
+  return projectSessionDir ? dirname(projectSessionDir) : undefined;
+}
+
+function delay(ms: number, signal: AbortSignal): Promise<boolean> {
+  if (signal.aborted) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const onAbort = () => {
+      clearTimeout(timeout);
+      signal.removeEventListener("abort", onAbort);
+      resolve(false);
+    };
+    const timeout = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve(true);
+    }, ms);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 function isInteractive(ctx: ExtensionContext): boolean {
@@ -313,7 +342,7 @@ export default function fastResume(pi: ExtensionAPI): void {
     }
 
     const worker = getClient();
-    const sessionDir = dirname(ctx.sessionManager.getSessionDir());
+    const sessionDir = sessionRoot(ctx);
     if (!sessionDir) {
       ctx.ui.notify("Pi has no configured session directory", "warning");
       return;
@@ -321,44 +350,93 @@ export default function fastResume(pi: ExtensionAPI): void {
     const cwd = ctx.sessionManager.getCwd();
     const currentSessionFilePath = ctx.sessionManager.getSessionFile();
     let view: FastResumeView | undefined;
-    let requestRender: (() => void) | undefined;
+    let pickerOpen = true;
+    let leaseFollower: Promise<void> | undefined;
+    const leaseFollowerAbort = new AbortController();
 
     worker.onProgress((state) => view?.setStatusText(state.phase === "ready" ? "" : state.message));
     worker.onIndexUpdated(() => view?.updateFromIndex());
     worker.onError((message) => view?.setStatusText(`Index error: ${message}`));
 
     const sync = await worker.sync(sessionDir);
-    if (!sync.started && sync.reason === "lease-held") {
-      // Another Pi process owns the scan; this picker still opens from the last index.
-    }
 
-    const selected = await ctx.ui.custom<string | undefined>(
-      (tui: TUI, theme: Theme, keybindings: KeybindingsManager, done) => {
-        requestRender = () => tui.requestRender();
-        view = new FastResumeView(worker, cwd, currentSessionFilePath, excludedSessionPath, keybindings, theme, done, requestRender);
-        view.setStatusText(sync.started ? "Index warming up…" : sync.reason === "lease-held" ? "Index scan owned by another Pi process" : "");
-        return view as Component & Focusable;
-      },
-      {
-        overlay: true,
-        overlayOptions: {
-          width: "100%",
-          maxHeight: "100%",
-          margin: 0,
+    const followForeignLease = async (): Promise<void> => {
+      while (pickerOpen && (await delay(LEASE_RETRY_INTERVAL_MS, leaseFollowerAbort.signal))) {
+        if (!pickerOpen) return;
+
+        await view?.refresh();
+        if (!pickerOpen) return;
+        const retry = await worker.sync(sessionDir);
+        if (retry.started || retry.reason === "already-running") {
+          view?.setStatusText("Index warming up…");
+          return;
+        }
+      }
+    };
+
+    let selected: string | undefined;
+    try {
+      selected = await ctx.ui.custom<string | undefined>(
+        (tui: TUI, theme: Theme, keybindings: KeybindingsManager, done) => {
+          const requestRender = () => tui.requestRender();
+          view = new FastResumeView(worker, cwd, currentSessionFilePath, excludedSessionPath, keybindings, theme, done, requestRender);
+          const status =
+            sync.started || sync.reason === "already-running"
+              ? "Index warming up…"
+              : sync.reason === "lease-held"
+                ? "Following index scan from another Pi process…"
+                : "";
+          view.setStatusText(status);
+          if (sync.reason === "lease-held") {
+            leaseFollower = followForeignLease().catch((error) => {
+              const message = error instanceof Error ? error.message : String(error);
+              view?.setStatusText(`Index error: ${message}`);
+            });
+          }
+          return view as Component & Focusable;
         },
-      },
-    );
+        {
+          overlay: true,
+          overlayOptions: {
+            width: "100%",
+            maxHeight: "100%",
+            margin: 0,
+          },
+        },
+      );
+    } finally {
+      pickerOpen = false;
+      leaseFollowerAbort.abort();
+      worker.onProgress(undefined);
+      worker.onIndexUpdated(undefined);
+      worker.onError(undefined);
+      view = undefined;
+      await leaseFollower;
+    }
 
     if (!selected) return;
     await onSelected(selected);
   }
+
+  pi.on("session_start", async (_event, ctx) => {
+    if (!isInteractive(ctx)) return;
+    const sessionDir = sessionRoot(ctx);
+    if (!sessionDir) return;
+
+    try {
+      await getClient().sync(sessionDir);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      ctx.ui.notify(`Fast-resume background index failed: ${message}`, "warning");
+    }
+  });
 
   pi.registerCommand("rf", {
     description: "Open fast resume picker backed by a worker-thread metadata index",
     handler: async (args, ctx) => {
       if (args.trim() === "reindex") {
         const worker = getClient();
-        const sessionDir = dirname(ctx.sessionManager.getSessionDir());
+        const sessionDir = sessionRoot(ctx);
         if (!sessionDir) {
           ctx.ui.notify("Pi has no configured session directory", "warning");
           return;

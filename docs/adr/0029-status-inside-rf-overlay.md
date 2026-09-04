@@ -4,4 +4,4 @@
 status: accepted
 ---
 
-`Index warming up… x/y`, статус lease и ошибки worker'а отображаются временной строкой внутри overlay `/rf`/`/resume-fast`, а не через общий footer Pi (`ctx.ui.setStatus`). Внешняя обёртка добавляет и обновляет эту строку, не трогая private internals `SessionSelectorComponent`; сам штатный picker остаётся неизменным дочерним компонентом. В устойчивом состоянии строка отсутствует, поэтому обычный UI остаётся максимально похож на оригинальный `/resume`.
+`Index warming up… x/y`, наблюдение за чужой lease и ошибки worker'а отображаются временной строкой внутри overlay `/rf`/`/resume-fast`, а не через общий footer Pi (`ctx.ui.setStatus`). После асинхронного изменения статуса или списка внешняя обёртка явно вызывает `tui.requestRender()`, не трогая private internals `SessionSelectorComponent`; сам штатный picker остаётся неизменным дочерним компонентом. В устойчивом состоянии строка отсутствует, поэтому обычный UI остаётся максимально похожим на оригинальный `/resume`.
