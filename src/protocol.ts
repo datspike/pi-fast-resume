@@ -14,6 +14,10 @@ export interface IndexedSession {
   archived: boolean;
 }
 
+export interface ProjectedSession extends IndexedSession {
+  projectKey: string;
+}
+
 export interface WorkerProgress {
   phase: "scanning" | "ready" | "error";
   completed: number;
@@ -23,14 +27,14 @@ export interface WorkerProgress {
 
 export type WorkerRequest =
   | { id: number; type: "snapshot"; cwd: string }
-  | { id: number; type: "sync"; sessionDir: string; reindex?: boolean }
+  | { id: number; type: "sync"; sessionDir: string; cwd: string; reindex?: boolean }
   | { id: number; type: "rename"; path: string; name: string }
   | { id: number; type: "shutdown" }
   | { id: number; type: "remove"; path: string };
 
 export type WorkerResponse =
-  | { id: number; type: "snapshot"; sessions: IndexedSession[] }
-  | { id: number; type: "sync"; started: boolean; reason?: "lease-held" | "already-running" }
+  | { id: number; type: "snapshot"; sessions: ProjectedSession[]; projectKey: string }
+  | { id: number; type: "sync"; started: boolean; projectKey: string; reason?: "lease-held" | "already-running" }
   | { id: number; type: "rename" }
   | { id: number; type: "remove" }
   | { id: number; type: "shutdown" }
@@ -40,7 +44,7 @@ export type WorkerResponse =
 
 export type WorkerRequestPayload =
   | { type: "snapshot"; cwd: string }
-  | { type: "sync"; sessionDir: string; reindex?: boolean }
+  | { type: "sync"; sessionDir: string; cwd: string; reindex?: boolean }
   | { type: "rename"; path: string; name: string }
   | { type: "shutdown" }
   | { type: "remove"; path: string };

@@ -19,7 +19,7 @@ import {
   Text,
   type TUI,
 } from "@earendil-works/pi-tui";
-import type { IndexedSession, WorkerProgress, WorkerRequest, WorkerRequestPayload, WorkerResponse } from "./protocol.ts";
+import type { IndexedSession, ProjectedSession, WorkerProgress, WorkerRequest, WorkerRequestPayload, WorkerResponse } from "./protocol.ts";
 import { isSubagentSession } from "./session-parser.ts";
 
 const SEARCH_TEXT_LIMIT = 4_096;
@@ -82,14 +82,18 @@ class WorkerClient {
     this.errorListener = listener;
   }
 
-  async snapshot(cwd: string): Promise<IndexedSession[]> {
+  async snapshot(cwd: string): Promise<{ sessions: ProjectedSession[]; projectKey: string }> {
     const response = await this.request({ type: "snapshot", cwd });
     if (response.type !== "snapshot") throw new Error("Unexpected worker response");
-    return response.sessions;
+    return { sessions: response.sessions, projectKey: response.projectKey };
   }
 
-  async sync(sessionDir: string, reindex = false): Promise<{ started: boolean; reason?: "lease-held" | "already-running" }> {
-    const response = await this.request({ type: "sync", sessionDir, reindex });
+  async sync(
+    sessionDir: string,
+    cwd: string,
+    reindex = false,
+  ): Promise<{ started: boolean; projectKey: string; reason?: "lease-held" | "already-running" }> {
+    const response = await this.request({ type: "sync", sessionDir, cwd, reindex });
     if (response.type !== "sync") throw new Error("Unexpected worker response");
     return response;
   }
@@ -175,7 +179,8 @@ class FastResumeView extends Container implements Focusable {
   private readonly client: WorkerClient;
   private agentsShown = false;
   private scope: "current" | "all" = "current";
-  private sessions: IndexedSession[] = [];
+  private sessions: ProjectedSession[] = [];
+  private projectKey = "";
   private readonly cwd: string;
   private readonly excludedSessionPath: string | undefined;
   private readonly requestRender: () => void;
@@ -260,7 +265,9 @@ class FastResumeView extends Container implements Focusable {
   }
 
   async refresh(scope = this.scope): Promise<void> {
-    this.sessions = await this.client.snapshot(this.cwd);
+    const snapshot = await this.client.snapshot(this.cwd);
+    this.sessions = snapshot.sessions;
+    this.projectKey = snapshot.projectKey;
     this.selector.getSessionList().setSessions(this.filtered(scope), scope === "all");
     this.requestRender();
   }
@@ -274,7 +281,7 @@ class FastResumeView extends Container implements Focusable {
 
   private filtered(scope: "current" | "all"): SessionInfo[] {
     return this.sessions
-      .filter((session) => scope === "all" || session.cwd === this.cwd)
+      .filter((session) => scope === "all" || session.projectKey === this.projectKey)
       .filter((session) => session.path !== this.excludedSessionPath)
       .filter((session) => this.agentsShown || !isSubagentSession(session))
       .map(toSessionInfo);
@@ -358,7 +365,7 @@ export default function fastResume(pi: ExtensionAPI): void {
     worker.onIndexUpdated(() => view?.updateFromIndex());
     worker.onError((message) => view?.setStatusText(`Index error: ${message}`));
 
-    const sync = await worker.sync(sessionDir);
+    const sync = await worker.sync(sessionDir, cwd);
 
     const followForeignLease = async (): Promise<void> => {
       while (pickerOpen && (await delay(LEASE_RETRY_INTERVAL_MS, leaseFollowerAbort.signal))) {
@@ -366,7 +373,7 @@ export default function fastResume(pi: ExtensionAPI): void {
 
         await view?.refresh();
         if (!pickerOpen) return;
-        const retry = await worker.sync(sessionDir);
+        const retry = await worker.sync(sessionDir, cwd);
         if (retry.started || retry.reason === "already-running") {
           view?.setStatusText("Index warming up…");
           return;
@@ -424,7 +431,7 @@ export default function fastResume(pi: ExtensionAPI): void {
     if (!sessionDir) return;
 
     try {
-      await getClient().sync(sessionDir);
+      await getClient().sync(sessionDir, ctx.sessionManager.getCwd());
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       ctx.ui.notify(`Fast-resume background index failed: ${message}`, "warning");
@@ -441,7 +448,7 @@ export default function fastResume(pi: ExtensionAPI): void {
           ctx.ui.notify("Pi has no configured session directory", "warning");
           return;
         }
-        const result = await worker.sync(sessionDir, true);
+        const result = await worker.sync(sessionDir, ctx.sessionManager.getCwd(), true);
         ctx.ui.notify(result.started ? "Fast-resume rebuild started" : `Rebuild unavailable: ${result.reason}`, result.started ? "info" : "warning");
         return;
       }

@@ -208,13 +208,14 @@ test("a picker follows index updates while another process owns the scan lease",
           const writer = new Database(indexPath);
           writer.prepare(`
             INSERT INTO sessions (
-              path, id, cwd, name, parent_session_path, created_ms, modified_ms,
+              path, id, cwd, project_key, name, parent_session_path, created_ms, modified_ms,
               source_mtime_ms, source_size, first_message, message_count, last_activity_ms, archived
-            ) VALUES (?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, 0)
+            ) VALUES (?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, 0)
           `).run(
             join(projectSessionDir, "foreign.jsonl"),
             "foreign-session",
             "/repo",
+            "path:/repo",
             Date.now(),
             Date.now(),
             Date.now(),
