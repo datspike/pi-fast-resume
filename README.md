@@ -29,7 +29,7 @@ Picker показывает до 20 строк списка одновремен
 ## Установка
 
 ```bash
-pi install /home/spike/hobby/pi-fast-resume
+pi install git:github.com/datspike/pi-fast-resume
 ```
 
 После установки перезапусти Pi или выполни `/reload`.
